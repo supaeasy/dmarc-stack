@@ -57,11 +57,19 @@ IMAP IDLE auf neue Reports.
   `ES_MEM_LIMIT=2g` reduzieren.
 * Ein IMAP-Postfach, in dem die DMARC-Reports ankommen, mit Zugangsdaten.
 
-## Schritt 1 — vm.max_map_count setzen (einmalig, wichtig!)
+## Schritt 1 — vm.max_map_count prüfen (und nur bei Bedarf setzen)
 
-Elasticsearch verweigert den Start (Exit-Code 78), wenn `vm.max_map_count`
-unter 262144 liegt. DSM setzt den Wert bei jedem Neustart zurück, deshalb als
-Boot-Aufgabe hinterlegen:
+Elasticsearch verweigert den Start (Exit-Code 78), wenn der Kernel-Parameter
+`vm.max_map_count` unter 262144 liegt. **Erst prüfen** — viele
+DSM-Installationen stehen bereits ab Werk auf 262144:
+
+```sh
+sysctl vm.max_map_count
+```
+
+Ist der Wert ≥ 262144: diesen Schritt komplett überspringen. Ist er
+niedriger (typisch 65530), als Boot-Aufgabe hinterlegen, damit er jeden
+Neustart und jedes DSM-Update übersteht:
 
 1. **Systemsteuerung → Aufgabenplaner → Erstellen → Ausgelöste Aufgabe →
    Benutzerdefiniertes Skript**
