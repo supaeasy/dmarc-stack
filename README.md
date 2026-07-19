@@ -10,7 +10,7 @@ Zusammengeführt aus [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCal
 | Komponente | Image | Version |
 |---|---|---|
 | parsedmarc | `ghcr.io/domainaware/parsedmarc` | 10.2.2 |
-| Elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch` | 8.19.18 (Support bis Juli 2027) |
+| Elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch` | 8.14.3 (letzte Version, die auf Synology-Kerneln ohne seccomp startet — siehe Troubleshooting) |
 | Grafana OSS | `grafana/grafana` | 12.4.5 (Security-Support bis Mai 2027) |
 
 ## Was ist anders als im alten dmarc-visualizer?
@@ -206,8 +206,9 @@ Der erste Lauf arbeitet das komplette Postfach ab. Was dich erwartet:
 
 * **Updates:** Versionen sind bewusst gepinnt. Update = Tag im Compose-File
   ändern (Commit ins Repo), dann Portainer → Stack → „Pull and redeploy"
-  (bzw. automatisch via GitOps-Polling). Elasticsearch nur innerhalb der
-  8.x-Linie aktualisieren, bevor Dashboards/Datasource getestet sind.
+  (bzw. automatisch via GitOps-Polling). **Elasticsearch bleibt auf 8.14.3
+  gepinnt** — neuere Versionen starten auf Synology-Kerneln nicht (seccomp,
+  siehe Troubleshooting).
 * **Backup:** Alles liegt unter `/volume2/docker/dmarc-stack` — den einen
   Ordner mit Hyper Backup o.ä. sichern, fertig. Die Rohdaten bleiben ohnehin
   im IMAP-Archive-Ordner erhalten und können jederzeit neu eingelesen werden.
@@ -220,6 +221,7 @@ Der erste Lauf arbeitet das komplette Postfach ab. Was dich erwartet:
 | Symptom | Ursache / Lösung |
 |---|---|
 | Elasticsearch-Container stirbt sofort, Exit-Code 78, Log: `max virtual memory areas vm.max_map_count [65530] is too low` | Schritt 1 vergessen oder Aufgabe nach Neustart nicht gelaufen. `sudo sysctl -w vm.max_map_count=262144`, Boot-Aufgabe prüfen. |
+| Elasticsearch stirbt mit Exit-Code 1, Log: `seccomp unavailable: CONFIG_SECCOMP not compiled into kernel` | Elasticsearch ≥ 8.15 auf Synology — der DSM-Kernel (4.4) kann kein seccomp, ab 8.15 ist das fatal. Image auf 8.14.3 gepinnt lassen; kein DSM-seitiger Fix möglich. |
 | parsedmarc: `Permission denied: '/parsedmarc.ini'` | `chmod 644` auf die Datei (Container läuft als uid 1000). |
 | Elasticsearch: `AccessDeniedException` auf `/usr/share/elasticsearch/data` oder Grafana: `GF_PATHS_DATA='/var/lib/grafana' is not writable` | `chown` aus Schritt 2 vergessen: `data/elasticsearch` → uid 1000, `data/grafana` → uid 472. |
 | parsedmarc: `%`-Fehler beim Start (InterpolationSyntaxError) | `%` im IMAP-Passwort muss in der ini als `%%` geschrieben werden. |

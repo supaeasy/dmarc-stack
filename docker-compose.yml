@@ -13,7 +13,12 @@
 services:
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
+    # NICHT auf >= 8.15 anheben, solange der Stack auf Synology läuft!
+    # Der DSM-Kernel (4.4) hat kein CONFIG_SECCOMP; ab ES 8.15 ist die
+    # fehlende seccomp-Sandbox ein fataler Startfehler
+    # ("seccomp unavailable: CONFIG_SECCOMP not compiled into kernel").
+    # 8.14.3 ist die letzte auf Synology lauffähige Version.
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     restart: unless-stopped
     environment:
       - node.name=elasticsearch
