@@ -29,8 +29,11 @@ password = CHANGE_ME
 ; IMAP-Ordner, in dem die DMARC-Reports liegen
 reports_folder = INBOX
 ; Verarbeitete Mails werden hierhin verschoben (wird bei Bedarf angelegt).
-; parsedmarc LÖSCHT nichts, solange delete = False (Default).
 archive_folder = Archive
+; Niemals Mails löschen, nur archivieren. False ist zwar der Default,
+; steht hier aber bewusst explizit. (Seit parsedmarc 8.x gehört die Option
+; in [mailbox], nicht mehr in [imap].)
+delete = False
 ; Nach dem Erstimport bleibt der Container im Watch-Modus (IMAP IDLE)
 ; und verarbeitet neue Reports automatisch.
 watch = True
