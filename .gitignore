@@ -1,0 +1,10 @@
+# Echte Zugangsdaten bleiben lokal auf dem NAS
+parsedmarc/parsedmarc.ini
+
+# Lokale Umgebungsdateien
+.env
+*.local
+
+# OS-Müll
+.DS_Store
+Thumbs.db

@@ -1,0 +1,3 @@
+# Zielplattform ist Linux (Synology) — immer LF ausliefern
+* text=auto eol=lf
+*.png binary

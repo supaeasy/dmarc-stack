@@ -1,0 +1,50 @@
+; parsedmarc-Konfiguration für dmarc-stack (parsedmarc 10.x!)
+;
+; 1. Diese Datei nach parsedmarc.ini kopieren (gleicher Ordner)
+; 2. IMAP-Zugangsdaten eintragen
+; 3. Auf dem NAS lesbar machen:  chmod 644 parsedmarc.ini
+;
+; Die echte parsedmarc.ini gehört NIEMALS ins Git-Repo (steht in .gitignore).
+;
+; Achtung bei Sonderzeichen: ein %-Zeichen im Passwort muss als %% geschrieben
+; werden (ini-Interpolation).
+;
+; Referenz aller Optionen:
+; https://domainaware.github.io/parsedmarc/usage.html#configuration-file
+
+[general]
+save_aggregate = True
+save_failure = True
+; Bei Speicherproblemen während des Erstimports aktivieren:
+; strip_attachment_payloads = True
+
+[imap]
+host = imap.example.com
+port = 993
+ssl = True
+user = dmarc-reports@example.com
+password = CHANGE_ME
+
+[mailbox]
+; IMAP-Ordner, in dem die DMARC-Reports liegen
+reports_folder = INBOX
+; Verarbeitete Mails werden hierhin verschoben (wird bei Bedarf angelegt).
+; parsedmarc LÖSCHT nichts, solange delete = False (Default).
+archive_folder = Archive
+; Nach dem Erstimport bleibt der Container im Watch-Modus (IMAP IDLE)
+; und verarbeitet neue Reports automatisch.
+watch = True
+; Anzahl Mails pro Verarbeitungs-Batch. Default wäre 10 — für den
+; Erstimport von ~4000 Mails ist 500 ein guter Kompromiss aus
+; Durchsatz und Speicherverbrauch. 0 = kein Limit.
+batch_size = 500
+check_timeout = 30
+
+[elasticsearch]
+; Docker-Servicename aus docker-compose.yml — nicht ändern
+hosts = elasticsearch:9200
+ssl = False
+; Monatliche statt täglicher Indizes: bei mehreren Jahren Report-Historie
+; sonst hunderte Shards auf dem Single-Node. Muss zum Index-Pattern in
+; grafana/provisioning/datasources/datasource.yml passen!
+monthly_indexes = True

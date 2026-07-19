@@ -1,0 +1,40 @@
+apiVersion: 1
+
+# Die UIDs "dmarc_es_ag" und "dmarc_es_fo" sind im Dashboard-JSON fest
+# verdrahtet — NICHT ändern, sonst zeigen alle Panels "Datasource not found".
+#
+# Index-Pattern passt zu "monthly_indexes = True" in der parsedmarc.ini.
+# Wer tägliche Indizes nutzt, muss hier auf "[dmarc_aggregate-]YYYY-MM-DD"
+# und interval "Daily" umstellen.
+
+datasources:
+  - name: "dmarc-aggregate"
+    type: "elasticsearch"
+    access: "proxy"
+    orgId: 1
+    uid: "dmarc_es_ag"
+    url: "http://elasticsearch:9200"
+    isDefault: true
+    jsonData:
+      index: "[dmarc_aggregate-]YYYY-MM"
+      interval: "Monthly"
+      timeField: "date_range"
+    version: 1
+    editable: false
+
+  # parsedmarc 10.x schreibt Failure-/Forensic-Reports in "dmarc_failure-*"
+  # (früher "dmarc_forensic-*"). Die Datasource behält den alten Namen/die
+  # alte UID, weil das Dashboard-JSON sie so referenziert.
+  - name: "dmarc-forensic"
+    type: "elasticsearch"
+    access: "proxy"
+    orgId: 1
+    uid: "dmarc_es_fo"
+    url: "http://elasticsearch:9200"
+    isDefault: false
+    jsonData:
+      index: "[dmarc_failure-]YYYY-MM"
+      interval: "Monthly"
+      timeField: "arrival_date"
+    version: 1
+    editable: false

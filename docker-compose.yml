@@ -1,0 +1,91 @@
+# dmarc-stack — parsedmarc + Elasticsearch + Grafana
+#
+# Ausgelegt für Synology DSM 7.2+ mit Portainer CE (Stack aus Git-Repository).
+# Portainer CE unterstützt KEINE relativen Bind-Mount-Pfade in Git-Stacks,
+# daher zeigen alle Konfig-Mounts auf absolute Pfade unter CONFIG_DIR
+# (Default: /volume1/docker/dmarc-stack). Die Daten von Elasticsearch und
+# Grafana liegen in Named Volumes — damit entfallen sämtliche
+# chown/Berechtigungsprobleme auf dem NAS.
+#
+# Voraussetzung auf dem Host (einmalig, siehe README):
+#   sysctl -w vm.max_map_count=262144   (per DSM-Aufgabenplaner beim Boot)
+
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.18
+    restart: unless-stopped
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=dmarc-stack
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - xpack.license.self_generated.type=basic
+      - "ES_JAVA_OPTS=-Xms${ES_HEAP:-1g} -Xmx${ES_HEAP:-1g}"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    # Schutz für das NAS: Elasticsearch darf maximal so viel RAM belegen.
+    # Faustregel: mindestens das Doppelte des Heaps (ES_HEAP).
+    mem_limit: ${ES_MEM_LIMIT:-2g}
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s http://localhost:9200/_cluster/health | grep -q -e '\"status\":\"green\"' -e '\"status\":\"yellow\"'"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - dmarc
+
+  parsedmarc:
+    image: ghcr.io/domainaware/parsedmarc:10.2.2
+    restart: unless-stopped
+    command: ["-c", "/parsedmarc.ini"]
+    volumes:
+      - ${CONFIG_DIR:-/volume1/docker/dmarc-stack}/parsedmarc/parsedmarc.ini:/parsedmarc.ini:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - dmarc
+
+  grafana:
+    image: grafana/grafana:12.4.5
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/var/lib/grafana/dashboards/Grafana-DMARC_Reports.json"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DATE_FORMATS_USE_BROWSER_LOCALE: "true"
+      GF_DATE_FORMATS_DEFAULT_TIMEZONE: "browser"
+      GF_DATE_FORMATS_DEFAULT_WEEK_START: "monday"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ${CONFIG_DIR:-/volume1/docker/dmarc-stack}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${CONFIG_DIR:-/volume1/docker/dmarc-stack}/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - dmarc
+
+volumes:
+  esdata:
+  grafanadata:
+
+networks:
+  dmarc:
