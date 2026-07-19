@@ -36,7 +36,7 @@ Zusammengeführt aus [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCal
 ## Architektur
 
 ```
-IMAP-Postfach ──► parsedmarc ──► Elasticsearch ──► Grafana (Port 3000)
+IMAP-Postfach ──► parsedmarc ──► Elasticsearch ──► Grafana (Port 3002)
  (DMARC-Mails)    (watch-Modus)   (Named Volume)    (Dashboard "DMARC Reports")
 ```
 
@@ -155,7 +155,7 @@ Alternativ ohne Git-Anbindung: Build method **Web editor** und den Inhalt von
 
 * Elasticsearch braucht am NAS 1–3 Minuten bis `healthy`; parsedmarc und
   Grafana starten erst danach (`depends_on` + Healthcheck).
-* Grafana: `http://<NAS-IP>:3000`, Login `admin` / dein Passwort.
+* Grafana: `http://<NAS-IP>:3002` (Port via `GRAFANA_PORT` änderbar), Login `admin` / dein Passwort.
   Das Dashboard **DMARC Reports** ist als Startseite hinterlegt (Ordner
   „DMARC"). Datasources `dmarc-aggregate` und `dmarc-forensic` sind fertig
   provisioniert.
