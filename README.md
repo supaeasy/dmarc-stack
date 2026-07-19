@@ -26,8 +26,10 @@ Zusammengeführt aus [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCal
   IPinfo-Lite-Datenbank mit und aktualisiert sie selbst. GeoIP.conf, cron und
   Lizenzschlüssel aus dem alten Repo entfallen ersatzlos.
 * **Docker-DNS statt fester Container-IPs** (`elasticsearch:9200` statt `10.0.2.2`).
-* **Named Volumes für alle Daten** → keine `chown`-Probleme mit uid 1000
-  (Elasticsearch) oder uid 472 (Grafana) auf dem NAS.
+* **Alles an einem Ort:** Konfiguration UND Daten liegen als Bind-Mounts
+  unter `/volume2/docker/dmarc-stack` — nichts versteckt sich in
+  Docker-Volumes. Dafür braucht es einmalig ein `chown` der Datenordner
+  (Elasticsearch läuft als uid 1000, Grafana als uid 472 — siehe Schritt 2).
 * **Tägliche Elasticsearch-Indizes** (parsedmarc-Default). Damit ein
   mehrjähriger Report-Bestand das Shard-Limit nicht sprengt, ist
   `cluster.max_shards_per_node=4000` gesetzt (Default wäre 1000).
@@ -89,18 +91,28 @@ Neustart und jedes DSM-Update übersteht:
 Per SSH (Benutzer mit Admin-Rechten):
 
 ```sh
-sudo mkdir -p /volume1/docker/dmarc-stack
-cd /volume1/docker/dmarc-stack
+sudo mkdir -p /volume2/docker/dmarc-stack
+cd /volume2/docker/dmarc-stack
 sudo git clone https://github.com/supaeasy/dmarc-stack.git .
+
+# Datenordner anlegen und den Container-Usern übereignen
+# (Elasticsearch läuft als uid 1000, Grafana als uid 472):
+sudo mkdir -p data/elasticsearch data/grafana
+sudo chown -R 1000:0 data/elasticsearch
+sudo chown -R 472:0 data/grafana
 ```
 
 Falls `git` auf dem NAS fehlt (Git Server aus dem Paketzentrum installieren
 oder): Repo als ZIP von GitHub laden und den Inhalt per File Station nach
-`/volume1/docker/dmarc-stack` hochladen. Am Ende muss es so aussehen:
+`/volume2/docker/dmarc-stack` hochladen — die `mkdir`/`chown`-Befehle oben
+sind trotzdem per SSH nötig. Am Ende muss es so aussehen:
 
 ```
-/volume1/docker/dmarc-stack/
+/volume2/docker/dmarc-stack/
 ├── docker-compose.yml
+├── data/
+│   ├── elasticsearch/   (uid 1000)
+│   └── grafana/         (uid 472)
 ├── grafana/
 │   ├── dashboards/Grafana-DMARC_Reports.json
 │   └── provisioning/...
@@ -110,7 +122,7 @@ oder): Repo als ZIP von GitHub laden und den Inhalt per File Station nach
 ## Schritt 3 — parsedmarc.ini anlegen
 
 ```sh
-cd /volume1/docker/dmarc-stack/parsedmarc
+cd /volume2/docker/dmarc-stack/parsedmarc
 sudo cp parsedmarc.ini.example parsedmarc.ini
 sudo vim parsedmarc.ini        # oder nano / File Station-Editor
 sudo chmod 644 parsedmarc.ini  # Container-User (uid 1000) muss lesen dürfen
@@ -140,7 +152,7 @@ automatisch anlegt, vorher manuell erstellen.
 5. **Deploy the stack**
 
 > Wichtig: Die Bind-Mounts im Compose-File sind absichtlich **absolute Pfade**
-> (`/volume1/docker/dmarc-stack/...`), weil Portainer CE relative Pfade in
+> (`/volume2/docker/dmarc-stack/...`), weil Portainer CE relative Pfade in
 > Git-Stacks nicht unterstützt. Liegt dein Ordner woanders, `CONFIG_DIR`
 > als Environment-Variable entsprechend setzen.
 
@@ -196,10 +208,9 @@ Der erste Lauf arbeitet das komplette Postfach ab. Was dich erwartet:
   ändern (Commit ins Repo), dann Portainer → Stack → „Pull and redeploy"
   (bzw. automatisch via GitOps-Polling). Elasticsearch nur innerhalb der
   8.x-Linie aktualisieren, bevor Dashboards/Datasource getestet sind.
-* **Backup:** Die Volumes `dmarc-stack_esdata` und `dmarc-stack_grafanadata`
-  liegen unter `/volume1/@docker/volumes/` — mit Hyper Backup o.ä. sichern.
-  Die Rohdaten bleiben ohnehin im IMAP-Archive-Ordner erhalten und können
-  jederzeit neu eingelesen werden.
+* **Backup:** Alles liegt unter `/volume2/docker/dmarc-stack` — den einen
+  Ordner mit Hyper Backup o.ä. sichern, fertig. Die Rohdaten bleiben ohnehin
+  im IMAP-Archive-Ordner erhalten und können jederzeit neu eingelesen werden.
 * **Elasticsearch ist bewusst ohne Authentifizierung** (`xpack.security.enabled=false`),
   aber nur im internen Docker-Netz erreichbar — Port 9200 ist nicht
   veröffentlicht. Nicht ändern, ohne Security zu aktivieren.
@@ -210,6 +221,7 @@ Der erste Lauf arbeitet das komplette Postfach ab. Was dich erwartet:
 |---|---|
 | Elasticsearch-Container stirbt sofort, Exit-Code 78, Log: `max virtual memory areas vm.max_map_count [65530] is too low` | Schritt 1 vergessen oder Aufgabe nach Neustart nicht gelaufen. `sudo sysctl -w vm.max_map_count=262144`, Boot-Aufgabe prüfen. |
 | parsedmarc: `Permission denied: '/parsedmarc.ini'` | `chmod 644` auf die Datei (Container läuft als uid 1000). |
+| Elasticsearch: `AccessDeniedException` auf `/usr/share/elasticsearch/data` oder Grafana: `GF_PATHS_DATA='/var/lib/grafana' is not writable` | `chown` aus Schritt 2 vergessen: `data/elasticsearch` → uid 1000, `data/grafana` → uid 472. |
 | parsedmarc: `%`-Fehler beim Start (InterpolationSyntaxError) | `%` im IMAP-Passwort muss in der ini als `%%` geschrieben werden. |
 | Grafana-Panels zeigen „Datasource not found" | Datasource-UIDs (`dmarc_es_ag`/`dmarc_es_fo`) in `datasource.yml` wurden verändert — Original wiederherstellen. |
 | Dashboard leer, keine Fehler | Zeitbereich oben rechts vergrößern (Reports liegen in der Vergangenheit). Prüfen: `curl http://localhost:9200/_cat/indices` (per SSH, aus einem Container im dmarc-Netz) — existieren `dmarc_aggregate-YYYY-MM-DD`- bzw. `dmarc_failure-YYYY-MM-DD`-Indizes? |

@@ -2,13 +2,13 @@
 #
 # Ausgelegt für Synology DSM 7.2+ mit Portainer CE (Stack aus Git-Repository).
 # Portainer CE unterstützt KEINE relativen Bind-Mount-Pfade in Git-Stacks,
-# daher zeigen alle Konfig-Mounts auf absolute Pfade unter CONFIG_DIR
-# (Default: /volume1/docker/dmarc-stack). Die Daten von Elasticsearch und
-# Grafana liegen in Named Volumes — damit entfallen sämtliche
-# chown/Berechtigungsprobleme auf dem NAS.
+# daher zeigen ALLE Mounts (Konfig UND Daten) auf absolute Pfade unter
+# CONFIG_DIR (Default: /volume2/docker/dmarc-stack).
 #
-# Voraussetzung auf dem Host (einmalig, siehe README):
+# Voraussetzungen auf dem Host (einmalig, siehe README):
 #   sysctl -w vm.max_map_count=262144   (per DSM-Aufgabenplaner beim Boot)
+#   Datenordner anlegen und chown'en:
+#     data/elasticsearch -> uid 1000:0   data/grafana -> uid 472:0
 
 services:
 
@@ -35,7 +35,7 @@ services:
     # Faustregel: mindestens das Doppelte des Heaps (ES_HEAP).
     mem_limit: ${ES_MEM_LIMIT:-4g}
     volumes:
-      - esdata:/usr/share/elasticsearch/data
+      - ${CONFIG_DIR:-/volume2/docker/dmarc-stack}/data/elasticsearch:/usr/share/elasticsearch/data
     healthcheck:
       test:
         [
@@ -54,7 +54,7 @@ services:
     restart: unless-stopped
     command: ["-c", "/parsedmarc.ini"]
     volumes:
-      - ${CONFIG_DIR:-/volume1/docker/dmarc-stack}/parsedmarc/parsedmarc.ini:/parsedmarc.ini:ro
+      - ${CONFIG_DIR:-/volume2/docker/dmarc-stack}/parsedmarc/parsedmarc.ini:/parsedmarc.ini:ro
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -77,18 +77,14 @@ services:
       GF_DATE_FORMATS_DEFAULT_TIMEZONE: "browser"
       GF_DATE_FORMATS_DEFAULT_WEEK_START: "monday"
     volumes:
-      - grafanadata:/var/lib/grafana
-      - ${CONFIG_DIR:-/volume1/docker/dmarc-stack}/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ${CONFIG_DIR:-/volume1/docker/dmarc-stack}/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ${CONFIG_DIR:-/volume2/docker/dmarc-stack}/data/grafana:/var/lib/grafana
+      - ${CONFIG_DIR:-/volume2/docker/dmarc-stack}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${CONFIG_DIR:-/volume2/docker/dmarc-stack}/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       elasticsearch:
         condition: service_healthy
     networks:
       - dmarc
-
-volumes:
-  esdata:
-  grafanadata:
 
 networks:
   dmarc:

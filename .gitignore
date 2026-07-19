@@ -5,6 +5,9 @@ parsedmarc/parsedmarc.ini
 .env
 *.local
 
+# Laufzeitdaten von Elasticsearch/Grafana (liegen auf dem NAS neben dem Repo)
+data/
+
 # OS-Müll
 .DS_Store
 Thumbs.db
