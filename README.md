@@ -216,6 +216,24 @@ Der erste Lauf arbeitet das komplette Postfach ab. Was dich erwartet:
   aber nur im internen Docker-Netz erreichbar — Port 9200 ist nicht
   veröffentlicht. Nicht ändern, ohne Security zu aktivieren.
 
+# Sonderfall: Forensic-Reports ohne ARF-Teil (dogado/secure-mailgate u.a.)
+
+Manche Gateways schicken Forensic-Reports ohne den maschinenlesbaren
+`message/feedback-report`-Teil. parsedmarc parst sie zwar (Text-Fallback),
+aber der Elasticsearch-Export verwirft sie dann mit
+`Failure report missing required field: 'feedback_type'`.
+
+Dieser Stack schaltet deshalb [parsedmarc/patch_feedback_type.py](parsedmarc/patch_feedback_type.py)
+als Entrypoint-Wrapper vor: Er ergänzt die fehlenden Felder
+(`feedback_type = auth-failure`, leere `authentication_results`), sodass
+diese Reports trotzdem im Dashboard landen. Bei standardkonformen Reports
+ändert der Patch nichts.
+
+Bereits als „invalid" einsortierte oder nur archivierte, aber nicht
+gespeicherte Reports nachträglich importieren: die Mails im Mailclient aus
+`Archive/Failure` (bzw. `Archive/Invalid`) zurück in die INBOX verschieben —
+der Watch-Modus verarbeitet sie erneut, Duplikate erkennt parsedmarc selbst.
+
 # Troubleshooting
 
 | Symptom | Ursache / Lösung |

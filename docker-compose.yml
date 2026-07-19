@@ -57,9 +57,14 @@ services:
   parsedmarc:
     image: ghcr.io/domainaware/parsedmarc:10.2.2
     restart: unless-stopped
+    # Entrypoint-Wrapper statt direktem parsedmarc-Aufruf: füllt fehlende
+    # Pflichtfelder in nicht-standardkonformen Forensic-Reports (z.B. von
+    # dogado/secure-mailgate) — Details siehe parsedmarc/patch_feedback_type.py
+    entrypoint: ["python", "/patch_feedback_type.py"]
     command: ["-c", "/parsedmarc.ini"]
     volumes:
       - ${CONFIG_DIR:-/volume2/docker/dmarc-stack}/parsedmarc/parsedmarc.ini:/parsedmarc.ini:ro
+      - ${CONFIG_DIR:-/volume2/docker/dmarc-stack}/parsedmarc/patch_feedback_type.py:/patch_feedback_type.py:ro
     depends_on:
       elasticsearch:
         condition: service_healthy
