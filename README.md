@@ -28,8 +28,9 @@ Zusammengeführt aus [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCal
 * **Docker-DNS statt fester Container-IPs** (`elasticsearch:9200` statt `10.0.2.2`).
 * **Named Volumes für alle Daten** → keine `chown`-Probleme mit uid 1000
   (Elasticsearch) oder uid 472 (Grafana) auf dem NAS.
-* **Monatliche Elasticsearch-Indizes** (`monthly_indexes = True`), damit ein
-  mehrjähriger Report-Bestand nicht hunderte Shards erzeugt.
+* **Tägliche Elasticsearch-Indizes** (parsedmarc-Default). Damit ein
+  mehrjähriger Report-Bestand das Shard-Limit nicht sprengt, ist
+  `cluster.max_shards_per_node=4000` gesetzt (Default wäre 1000).
 * Elasticsearch 6.x/8.18 → **8.19.17**, Grafana 11.6 → **12.4.5**.
 
 ## Architektur
@@ -51,10 +52,9 @@ IMAP IDLE auf neue Reports.
 
 * DSM 7.2+, Container Manager installiert, Portainer CE läuft
 * SSH-Zugang aktiviert (Systemsteuerung → Terminal & SNMP → SSH)
-* **RAM:** Mit den 4 GB Werksbestückung läuft der Stack mit `ES_HEAP=1g` am
-  Limit (Elasticsearch + Grafana + DSM). Es funktioniert, aber ein Upgrade
-  (DS1621+ offiziell bis 32 GB ECC) ist die beste Einzelinvestition in diesen
-  Stack. Bis dahin: `ES_HEAP=1g`, `ES_MEM_LIMIT=2g` (Defaults) belassen.
+* **RAM:** Die Defaults (`ES_HEAP=2g`, `ES_MEM_LIMIT=4g`) passen für ein NAS
+  mit 16 GB+ RAM. Bei der 4-GB-Werksbestückung auf `ES_HEAP=1g` /
+  `ES_MEM_LIMIT=2g` reduzieren.
 * Ein IMAP-Postfach, in dem die DMARC-Reports ankommen, mit Zugangsdaten.
 
 ## Schritt 1 — vm.max_map_count setzen (einmalig, wichtig!)
@@ -204,8 +204,9 @@ Der erste Lauf arbeitet das komplette Postfach ab. Was dich erwartet:
 | parsedmarc: `Permission denied: '/parsedmarc.ini'` | `chmod 644` auf die Datei (Container läuft als uid 1000). |
 | parsedmarc: `%`-Fehler beim Start (InterpolationSyntaxError) | `%` im IMAP-Passwort muss in der ini als `%%` geschrieben werden. |
 | Grafana-Panels zeigen „Datasource not found" | Datasource-UIDs (`dmarc_es_ag`/`dmarc_es_fo`) in `datasource.yml` wurden verändert — Original wiederherstellen. |
-| Dashboard leer, keine Fehler | Zeitbereich oben rechts vergrößern (Reports liegen in der Vergangenheit). Prüfen: `curl http://localhost:9200/_cat/indices` (per SSH, aus einem Container im dmarc-Netz) — existieren `dmarc_aggregate-YYYY-MM`- bzw. `dmarc_failure-YYYY-MM`-Indizes? |
-| NAS wird träge / OOM während des Imports | `ES_HEAP` nicht über 1 GB bei 4 GB RAM; `batch_size` senken; `strip_attachment_payloads = True`; RAM-Upgrade erwägen. |
+| Dashboard leer, keine Fehler | Zeitbereich oben rechts vergrößern (Reports liegen in der Vergangenheit). Prüfen: `curl http://localhost:9200/_cat/indices` (per SSH, aus einem Container im dmarc-Netz) — existieren `dmarc_aggregate-YYYY-MM-DD`- bzw. `dmarc_failure-YYYY-MM-DD`-Indizes? |
+| NAS wird träge / OOM während des Imports | `ES_HEAP`/`ES_MEM_LIMIT` senken (bei 4 GB RAM: 1g/2g); `batch_size` senken; `strip_attachment_payloads = True`. |
+| Import bricht ab, Log: `this action would add [2] shards, but this cluster currently has [...] maximum normal shards open` | Shard-Limit erreicht — `cluster.max_shards_per_node` in der Compose-Datei erhöhen (Default hier bereits 4000). |
 | Portainer-Git-Stack: `bind source path does not exist` | `CONFIG_DIR` zeigt auf einen nicht existierenden Pfad, oder Schritt 2 fehlt. Relative Pfade funktionieren in Portainer CE nicht. |
 
 # Credits

@@ -44,7 +44,8 @@ check_timeout = 30
 ; Docker-Servicename aus docker-compose.yml — nicht ändern
 hosts = elasticsearch:9200
 ssl = False
-; Monatliche statt täglicher Indizes: bei mehreren Jahren Report-Historie
-; sonst hunderte Shards auf dem Single-Node. Muss zum Index-Pattern in
-; grafana/provisioning/datasources/datasource.yml passen!
-monthly_indexes = True
+; Tägliche Indizes (parsedmarc-Default). Muss zum Index-Pattern in
+; grafana/provisioning/datasources/datasource.yml passen ([...-]YYYY-MM-DD).
+; Bei vielen Jahren Historie entstehen entsprechend viele Indizes — das
+; Shard-Limit ist dafür in docker-compose.yml bereits hochgesetzt.
+monthly_indexes = False

@@ -23,14 +23,17 @@ services:
       - xpack.security.enabled=false
       - xpack.security.enrollment.enabled=false
       - xpack.license.self_generated.type=basic
-      - "ES_JAVA_OPTS=-Xms${ES_HEAP:-1g} -Xmx${ES_HEAP:-1g}"
+      # Tägliche Indizes über mehrere Jahre Historie sprengen sonst das
+      # Default-Limit von 1000 Shards pro Node (Import bricht ab).
+      - cluster.max_shards_per_node=4000
+      - "ES_JAVA_OPTS=-Xms${ES_HEAP:-2g} -Xmx${ES_HEAP:-2g}"
     ulimits:
       memlock:
         soft: -1
         hard: -1
     # Schutz für das NAS: Elasticsearch darf maximal so viel RAM belegen.
     # Faustregel: mindestens das Doppelte des Heaps (ES_HEAP).
-    mem_limit: ${ES_MEM_LIMIT:-2g}
+    mem_limit: ${ES_MEM_LIMIT:-4g}
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:

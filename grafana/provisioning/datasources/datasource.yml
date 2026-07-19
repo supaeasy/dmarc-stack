@@ -3,9 +3,10 @@ apiVersion: 1
 # Die UIDs "dmarc_es_ag" und "dmarc_es_fo" sind im Dashboard-JSON fest
 # verdrahtet — NICHT ändern, sonst zeigen alle Panels "Datasource not found".
 #
-# Index-Pattern passt zu "monthly_indexes = True" in der parsedmarc.ini.
-# Wer tägliche Indizes nutzt, muss hier auf "[dmarc_aggregate-]YYYY-MM-DD"
-# und interval "Daily" umstellen.
+# Index-Pattern passt zu täglichen Indizes (parsedmarc-Default).
+# Wer auf monthly_indexes = True umstellt, muss hier auf
+# "[dmarc_aggregate-]YYYY-MM" / "[dmarc_failure-]YYYY-MM" und
+# interval "Monthly" wechseln.
 
 datasources:
   - name: "dmarc-aggregate"
@@ -16,8 +17,8 @@ datasources:
     url: "http://elasticsearch:9200"
     isDefault: true
     jsonData:
-      index: "[dmarc_aggregate-]YYYY-MM"
-      interval: "Monthly"
+      index: "[dmarc_aggregate-]YYYY-MM-DD"
+      interval: "Daily"
       timeField: "date_range"
     version: 1
     editable: false
@@ -33,8 +34,8 @@ datasources:
     url: "http://elasticsearch:9200"
     isDefault: false
     jsonData:
-      index: "[dmarc_failure-]YYYY-MM"
-      interval: "Monthly"
+      index: "[dmarc_failure-]YYYY-MM-DD"
+      interval: "Daily"
       timeField: "arrival_date"
     version: 1
     editable: false
