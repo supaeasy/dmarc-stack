@@ -20,11 +20,6 @@ services:
     # 8.14.3 ist die letzte auf Synology lauffähige Version.
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     restart: unless-stopped
-    labels:
-      - "wud.watch=true"
-      - "wud.trigger.docker.safeupdate=true"
-      # Nur 8.14.x zulassen — >= 8.15 startet auf Synology nicht (seccomp)!
-      - 'wud.tag.include=^8\.14\.\d+$$'
     environment:
       - node.name=elasticsearch
       - cluster.name=dmarc-stack
@@ -62,11 +57,6 @@ services:
   parsedmarc:
     image: ghcr.io/domainaware/parsedmarc:10.2.2
     restart: unless-stopped
-    labels:
-      - "wud.watch=true"
-      - "wud.trigger.docker.safeupdate=true"
-      # Nur echte Versionstags, kein "latest"
-      - 'wud.tag.include=^\d+\.\d+\.\d+$$'
     # Entrypoint-Wrapper statt direktem parsedmarc-Aufruf: füllt fehlende
     # Pflichtfelder in nicht-standardkonformen Forensic-Reports (z.B. von
     # dogado/secure-mailgate) — Details siehe parsedmarc/patch_feedback_type.py
@@ -84,12 +74,6 @@ services:
   grafana:
     image: grafana/grafana:12.4.5
     restart: unless-stopped
-    labels:
-      - "wud.watch=true"
-      - "wud.trigger.docker.safeupdate=true"
-      # In der 12.x-Linie bleiben (13.0.1 hatte einen ES-Datasource-Bug;
-      # Major-Sprung lieber bewusst machen)
-      - 'wud.tag.include=^12\.\d+\.\d+$$'
     ports:
       - "${GRAFANA_PORT:-3002}:3000"
     environment:
