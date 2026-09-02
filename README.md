@@ -1,111 +1,115 @@
 # dmarc-stack
 
-DMARC-Reports automatisch per IMAP abholen, parsen und in Grafana visualisieren —
-als Docker-Stack für **Synology DSM 7.2+ mit Portainer**.
+🇬🇧 English | 🇩🇪 [Deutsch](README.de.md)
 
-Zusammengeführt aus [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCallaghan/dmarc-visualizer)
-(Grafana-Dashboard + Stack-Idee) und [domainaware/parsedmarc](https://github.com/domainaware/parsedmarc)
-(Parser, offizielles Docker-Image). Lizenz: Apache 2.0, wie beide Upstream-Projekte.
+Fetch DMARC reports from an IMAP mailbox, parse them, and visualize them in
+Grafana — as a Docker stack built for **Synology DSM 7.2+ with Portainer**.
 
-| Komponente | Image | Version |
+Merged from [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCallaghan/dmarc-visualizer)
+(Grafana dashboard + stack idea) and [domainaware/parsedmarc](https://github.com/domainaware/parsedmarc)
+(parser, official Docker image). License: Apache 2.0, same as both upstream projects.
+
+| Component | Image | Version |
 |---|---|---|
 | parsedmarc | `ghcr.io/domainaware/parsedmarc` | 10.2.2 |
-| Elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch` | 8.14.3 (letzte Version, die auf Synology-Kerneln ohne seccomp startet — siehe Troubleshooting) |
-| Grafana OSS | `grafana/grafana` | 12.4.5 (Security-Support bis Mai 2027) |
+| Elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch` | 8.14.3 (last version that starts on Synology kernels without seccomp — see troubleshooting) |
+| Grafana OSS | `grafana/grafana` | 12.4.5 |
 
-## Was ist anders als im alten dmarc-visualizer?
+## Design decisions
 
-* **Keine selbstgebauten Images mehr.** Der alte Stack baute parsedmarc und ein
-  stark angepasstes Grafana per Dockerfile — genau diese Builds scheiterten auf
-  Synology Container Manager ([Issue #1](https://github.com/LukeCallaghan/dmarc-visualizer/issues/1)).
-  Hier laufen ausschließlich unveränderte Stock-Images; Dashboard und
-  Datasources kommen per Grafana-Provisioning (Bind-Mount) rein.
-* **Offizielles parsedmarc-Image** statt pip-Install in Alpine. Aktuelle
-  parsedmarc-Version, Multi-Arch, gepflegt vom Upstream.
-* **Kein MaxMind/GeoIP-Setup mehr nötig.** parsedmarc 10.x bringt eine
-  IPinfo-Lite-Datenbank mit und aktualisiert sie selbst. GeoIP.conf, cron und
-  Lizenzschlüssel aus dem alten Repo entfallen ersatzlos.
-* **Docker-DNS statt fester Container-IPs** (`elasticsearch:9200` statt `10.0.2.2`).
-* **Alles an einem Ort:** Konfiguration UND Daten liegen als Bind-Mounts
-  unter `/volume2/docker/dmarc-stack` — nichts versteckt sich in
-  Docker-Volumes. Dafür braucht es einmalig ein `chown` der Datenordner
-  (Elasticsearch läuft als uid 1000, Grafana als uid 472 — siehe Schritt 2).
-* **Tägliche Elasticsearch-Indizes** (parsedmarc-Default). Damit ein
-  mehrjähriger Report-Bestand das Shard-Limit nicht sprengt, ist
-  `cluster.max_shards_per_node=4000` gesetzt (Default wäre 1000).
-* Elasticsearch 6.x/8.18 → **8.19.17**, Grafana 11.6 → **12.4.5**.
+* **No custom image builds.** Older DMARC stacks built parsedmarc and a
+  customized Grafana via Dockerfiles — exactly those builds are known to fail
+  on Synology Container Manager
+  ([dmarc-visualizer#1](https://github.com/LukeCallaghan/dmarc-visualizer/issues/1)).
+  This stack runs unmodified stock images only; the dashboard and datasources
+  are injected via Grafana provisioning (bind mounts).
+* **Official parsedmarc image** instead of a pip install in Alpine. Current
+  parsedmarc version, multi-arch, maintained upstream. Side effect: no
+  MaxMind/GeoIP setup needed — parsedmarc 10.x ships its own IP database and
+  keeps it updated.
+* **Elasticsearch pinned to 8.14.3.** Synology's DSM kernel (4.4) lacks
+  `CONFIG_SECCOMP`; starting with ES 8.15 the missing seccomp sandbox is a
+  fatal boot error. Do not raise this pin while running on Synology.
+* **Docker DNS instead of fixed container IPs** (`elasticsearch:9200`).
+* **Everything in one folder:** configuration AND data live as bind mounts
+  under a single directory (default `/volume2/docker/dmarc-stack`) — nothing
+  hides in Docker volumes. This requires a one-time `chown` of the data
+  directories (Elasticsearch runs as uid 1000, Grafana as uid 472 — see
+  step 2).
+* **Daily Elasticsearch indices** (parsedmarc default). So that years of
+  report history don't hit the shard limit, `cluster.max_shards_per_node=4000`
+  is set (default would be 1000).
 
-## Architektur
+## Architecture
 
 ```
-IMAP-Postfach ──► parsedmarc ──► Elasticsearch ──► Grafana (Port 3002)
- (DMARC-Mails)    (watch-Modus)   (Named Volume)    (Dashboard "DMARC Reports")
+IMAP mailbox  ──► parsedmarc ──► Elasticsearch ──► Grafana (port 3002)
+(DMARC reports)   (watch mode)   (bind mount)      ("DMARC Reports" dashboard)
 ```
 
-parsedmarc läuft dauerhaft im Watch-Modus: Er verarbeitet beim Start alle Mails
-im `reports_folder`, verschiebt sie nach `Archive` und wartet dann per
-IMAP IDLE auf neue Reports.
+parsedmarc runs permanently in watch mode: on startup it processes all mail in
+the `reports_folder`, moves it to `Archive`, and then waits for new reports
+via IMAP IDLE.
 
 ---
 
-# Installation auf dem Synology NAS (DS1621+)
+# Installation on a Synology NAS
 
-## Schritt 0 — Voraussetzungen
+## Step 0 — Prerequisites
 
-* DSM 7.2+, Container Manager installiert, Portainer CE läuft
-* SSH-Zugang aktiviert (Systemsteuerung → Terminal & SNMP → SSH)
-* **RAM:** Die Defaults (`ES_HEAP=2g`, `ES_MEM_LIMIT=4g`) passen für ein NAS
-  mit 16 GB+ RAM. Bei der 4-GB-Werksbestückung auf `ES_HEAP=1g` /
-  `ES_MEM_LIMIT=2g` reduzieren.
-* Ein IMAP-Postfach, in dem die DMARC-Reports ankommen, mit Zugangsdaten.
+* DSM 7.2+, Container Manager installed, Portainer CE running (standalone
+  Docker environment, not Swarm — the default on Synology)
+* SSH access enabled (Control Panel → Terminal & SNMP → SSH)
+* **RAM:** the defaults (`ES_HEAP=2g`, `ES_MEM_LIMIT=4g`) fit a NAS with
+  16 GB+ RAM. On a 4 GB model reduce to `ES_HEAP=1g` / `ES_MEM_LIMIT=2g`.
+* An IMAP mailbox receiving the DMARC reports, with credentials.
 
-## Schritt 1 — vm.max_map_count prüfen (und nur bei Bedarf setzen)
+## Step 1 — Check vm.max_map_count (set only if needed)
 
-Elasticsearch verweigert den Start (Exit-Code 78), wenn der Kernel-Parameter
-`vm.max_map_count` unter 262144 liegt. **Erst prüfen** — viele
-DSM-Installationen stehen bereits ab Werk auf 262144:
+Elasticsearch refuses to start (exit code 78) if the kernel parameter
+`vm.max_map_count` is below 262144. **Check first** — many DSM installations
+already ship with 262144:
 
 ```sh
 sysctl vm.max_map_count
 ```
 
-Ist der Wert ≥ 262144: diesen Schritt komplett überspringen. Ist er
-niedriger (typisch 65530), als Boot-Aufgabe hinterlegen, damit er jeden
-Neustart und jedes DSM-Update übersteht:
+If the value is ≥ 262144: skip this step entirely. If it is lower (typically
+65530), register it as a boot task so it survives every reboot and DSM update:
 
-1. **Systemsteuerung → Aufgabenplaner → Erstellen → Ausgelöste Aufgabe →
-   Benutzerdefiniertes Skript**
-2. Allgemein: Name `es-max-map-count`, Benutzer **root**, Ereignis **Hochfahren**
-3. Aufgabeneinstellungen → Benutzerdefiniertes Skript:
+1. **Control Panel → Task Scheduler → Create → Triggered Task →
+   User-defined script**
+2. General: name `es-max-map-count`, user **root**, event **Boot-up**
+3. Task settings → user-defined script:
    ```sh
    sysctl -w vm.max_map_count=262144
    ```
-4. Speichern und die Aufgabe einmal **manuell ausführen** (Rechtsklick →
-   Ausführen), damit der Wert sofort gilt — ohne Neustart.
+4. Save, then run the task once manually (right-click → Run) so the value
+   applies immediately — no reboot needed.
 
-> `/etc/sysctl.conf` direkt zu editieren funktioniert auch, wird aber von
-> DSM-Updates gerne überschrieben. Der Aufgabenplaner-Weg überlebt Updates.
+> Editing `/etc/sysctl.conf` directly also works, but DSM updates tend to
+> overwrite it. The Task Scheduler route survives updates.
 
-## Schritt 2 — Konfig-Ordner auf dem NAS anlegen
+## Step 2 — Create the config folder on the NAS
 
-Per SSH (Benutzer mit Admin-Rechten):
+Via SSH (user with admin rights):
 
 ```sh
 sudo mkdir -p /volume2/docker/dmarc-stack
 cd /volume2/docker/dmarc-stack
 sudo git clone https://github.com/supaeasy/dmarc-stack.git .
 
-# Datenordner anlegen und den Container-Usern übereignen
-# (Elasticsearch läuft als uid 1000, Grafana als uid 472):
+# Create the data directories and hand them to the container users
+# (Elasticsearch runs as uid 1000, Grafana as uid 472):
 sudo mkdir -p data/elasticsearch data/grafana
 sudo chown -R 1000:0 data/elasticsearch
 sudo chown -R 472:0 data/grafana
 ```
 
-Falls `git` auf dem NAS fehlt (Git Server aus dem Paketzentrum installieren
-oder): Repo als ZIP von GitHub laden und den Inhalt per File Station nach
-`/volume2/docker/dmarc-stack` hochladen — die `mkdir`/`chown`-Befehle oben
-sind trotzdem per SSH nötig. Am Ende muss es so aussehen:
+If `git` is missing on the NAS (install Git Server from the Package Center,
+or): download the repo as a ZIP from GitHub and upload the contents to
+`/volume2/docker/dmarc-stack` via File Station — the `mkdir`/`chown` commands
+above are still required via SSH. The result must look like this:
 
 ```
 /volume2/docker/dmarc-stack/
@@ -119,24 +123,24 @@ sind trotzdem per SSH nötig. Am Ende muss es so aussehen:
 └── parsedmarc/parsedmarc.ini.example
 ```
 
-## Schritt 3 — parsedmarc.ini anlegen
+## Step 3 — Create parsedmarc.ini
 
 ```sh
 cd /volume2/docker/dmarc-stack/parsedmarc
 sudo cp parsedmarc.ini.example parsedmarc.ini
-sudo vim parsedmarc.ini        # oder nano / File Station-Editor
-sudo chmod 644 parsedmarc.ini  # Container-User (uid 1000) muss lesen dürfen
+sudo vim parsedmarc.ini        # or nano / the File Station editor
+sudo chmod 644 parsedmarc.ini  # the container user (uid 1000) must be able to read it
 ```
 
-Eintragen: IMAP-`host`, `user`, `password`. Der Rest ist vorkonfiguriert
-(Watch-Modus, Batch 500, monatliche Indizes). Die Datei bleibt nur auf dem
-NAS — sie steht in `.gitignore` und gehört nie ins Repo.
+Fill in: IMAP `host`, `user`, `password`. The rest is preconfigured (watch
+mode, batching, daily indices). The file stays on the NAS only — it is listed
+in `.gitignore` and must never end up in the repo.
 
-**Hinweis zum Postfach:** Verarbeitete Mails werden in den IMAP-Ordner
-`Archive` verschoben (nicht gelöscht). Wenn dein Mailserver den Ordner nicht
-automatisch anlegt, vorher manuell erstellen.
+**Mailbox note:** processed mail is moved to the IMAP folder `Archive`
+(never deleted). If your mail server doesn't create folders automatically,
+create it beforehand.
 
-## Schritt 4 — Stack in Portainer anlegen
+## Step 4 — Create the stack in Portainer
 
 1. Portainer → **Stacks → Add stack**
 2. Name: `dmarc-stack`
@@ -144,113 +148,112 @@ automatisch anlegt, vorher manuell erstellen.
    * Repository URL: `https://github.com/supaeasy/dmarc-stack`
    * Repository reference: `refs/heads/main`
    * Compose path: `docker-compose.yml`
-   * Optional: **GitOps updates / Polling** aktivieren, dann zieht Portainer
-     Compose-Änderungen aus dem Repo automatisch nach.
-4. **Environment variables** hinzufügen (siehe `.env.example`):
-   * `GRAFANA_ADMIN_PASSWORD` = *ein richtiges Passwort*
-   * optional `ES_HEAP`, `ES_MEM_LIMIT`, `GRAFANA_PORT`, `CONFIG_DIR`
+   * Optional: enable **GitOps updates / polling** so Portainer picks up
+     compose changes from the repo automatically.
+4. Add **environment variables** (see `.env.example`):
+   * `GRAFANA_ADMIN_PASSWORD` = *a real password*
+   * optional: `ES_HEAP`, `ES_MEM_LIMIT`, `GRAFANA_PORT`, `CONFIG_DIR`
 5. **Deploy the stack**
 
-> Wichtig: Die Bind-Mounts im Compose-File sind absichtlich **absolute Pfade**
-> (`/volume2/docker/dmarc-stack/...`), weil Portainer CE relative Pfade in
-> Git-Stacks nicht unterstützt. Liegt dein Ordner woanders, `CONFIG_DIR`
-> als Environment-Variable entsprechend setzen.
+> Important: the bind mounts in the compose file deliberately use **absolute
+> paths** (`/volume2/docker/dmarc-stack/...`) because Portainer CE does not
+> support relative paths in Git stacks. If your folder lives elsewhere, set
+> `CONFIG_DIR` accordingly.
 
-Alternativ ohne Git-Anbindung: Build method **Web editor** und den Inhalt von
-`docker-compose.yml` einfügen — Rest identisch.
+Alternative without the Git connection: build method **Web editor**, paste the
+contents of `docker-compose.yml` — everything else is identical.
 
-> Der Stack setzt eine **Standalone-Docker-Umgebung** in Portainer voraus
-> (kein Swarm) — auf Synology mit Container Manager ist das der Standardfall.
-> Im Swarm-Modus würden `depends_on`-Healthcheck-Bedingungen ignoriert.
+## Step 5 — First start
 
-## Schritt 5 — Erster Start
-
-* Elasticsearch braucht am NAS 1–3 Minuten bis `healthy`; parsedmarc und
-  Grafana starten erst danach (`depends_on` + Healthcheck).
-* Grafana: `http://<NAS-IP>:3002` (Port via `GRAFANA_PORT` änderbar), Login `admin` / dein Passwort.
-  Das Dashboard **DMARC Reports** ist als Startseite hinterlegt (Ordner
-  „DMARC"). Datasources `dmarc-aggregate` und `dmarc-forensic` sind fertig
-  provisioniert.
-* Logs prüfen: Portainer → Containers → `dmarc-stack-parsedmarc-1` → Logs.
+* Elasticsearch takes 1–3 minutes to report `healthy` on a NAS; parsedmarc
+  and Grafana start only afterwards (`depends_on` + healthcheck).
+* Grafana: `http://<NAS-IP>:3002` (port configurable via `GRAFANA_PORT`),
+  login `admin` / your password. The **DMARC Reports** dashboard is the
+  default home dashboard (folder "DMARC"). The datasources
+  `dmarc-aggregate` and `dmarc-forensic` are provisioned automatically.
+* Check the logs: Portainer → Containers → `dmarc-stack-parsedmarc-1` → Logs.
 
 ---
 
-# Der Erstimport (~4000 Mails)
+# Importing an existing mailbox
 
-Der erste Lauf arbeitet das komplette Postfach ab. Was dich erwartet:
+The first run processes the entire `reports_folder`. What to expect:
 
-* **Dauer:** Rechne mit mehreren Stunden. Pro Report macht parsedmarc
-  DNS-Lookups (Reverse DNS der meldenden IPs); das dominiert die Laufzeit.
-  Die Verarbeitung läuft in Batches à 500 Mails (`batch_size`), nach jedem
-  Batch wird in Elasticsearch gespeichert und die Mails wandern nach `Archive`.
-* **Fortschritt beobachten:**
+* **Duration:** for mailboxes with thousands of reports, plan for hours. Per
+  report parsedmarc performs DNS lookups (reverse DNS of the reporting IPs);
+  that dominates the runtime. Processing happens in batches (`batch_size`);
+  after each batch, results are saved and the mail is moved to `Archive`.
+* **Watch progress:**
   ```sh
   sudo docker logs -f dmarc-stack-parsedmarc-1
   ```
-  Alternativ: im Dashboard zusehen, wie die Zahlen wachsen (Zeitraum oben
-  rechts auf „Last 1 year" o.ä. stellen!).
-* **Abbruch ist unkritisch.** Schon verarbeitete Mails liegen im
-  `Archive`-Ordner, der Rest in `INBOX` — nach einem Neustart macht parsedmarc
-  dort weiter. Doppelt verarbeitete Reports erkennt parsedmarc am Report-Hash
-  und überspringt sie („already exists in Elasticsearch").
-* **RAM im Blick behalten:** DSM → Ressourcenmonitor. Wird es eng
-  (Swapping), in der `parsedmarc.ini` zusätzlich
-  `strip_attachment_payloads = True` setzen und/oder `batch_size = 100`,
-  dann Container neu starten.
-* **Nach dem Import** bleibt der Container im Watch-Modus und verarbeitet
-  neue Reports, sobald sie eintreffen. Nichts weiter zu tun.
+  Or watch the dashboard numbers grow (set the time range in the top right
+  to something like "Last 1 year"!).
+* **Interruptions are harmless.** Already-processed mail sits in `Archive`,
+  the rest in the `reports_folder` — after a restart parsedmarc continues
+  there. Duplicates are detected and skipped.
+* **Watch memory usage:** DSM → Resource Monitor. If things get tight,
+  set `strip_attachment_payloads = True` and/or lower `batch_size` in
+  `parsedmarc.ini`, then restart the container.
+* **After the import** the container stays in watch mode and processes new
+  reports as they arrive. Nothing else to do.
 
 ---
 
-# Betrieb
+# Operation
 
-* **Updates:** Versionen sind bewusst gepinnt. Update = Tag im Compose-File
-  ändern (Commit ins Repo), dann Portainer → Stack → „Pull and redeploy"
-  (bzw. automatisch via GitOps-Polling). **Elasticsearch bleibt auf 8.14.3
-  gepinnt** — neuere Versionen starten auf Synology-Kerneln nicht (seccomp,
-  siehe Troubleshooting).
-* **Backup:** Alles liegt unter `/volume2/docker/dmarc-stack` — den einen
-  Ordner mit Hyper Backup o.ä. sichern, fertig. Die Rohdaten bleiben ohnehin
-  im IMAP-Archive-Ordner erhalten und können jederzeit neu eingelesen werden.
-* **Elasticsearch ist bewusst ohne Authentifizierung** (`xpack.security.enabled=false`),
-  aber nur im internen Docker-Netz erreichbar — Port 9200 ist nicht
-  veröffentlicht. Nicht ändern, ohne Security zu aktivieren.
+* **Updates:** versions are pinned on purpose. Update = change the tag in the
+  compose file (commit to the repo), then Portainer → stack → "Pull and
+  redeploy" (or automatically via GitOps polling). **Elasticsearch stays
+  pinned to 8.14.3** — newer versions do not start on Synology kernels
+  (seccomp, see troubleshooting).
+* **Backup:** everything lives under `/volume2/docker/dmarc-stack` — back up
+  that one folder with Hyper Backup or similar. The raw reports remain in the
+  IMAP archive folder anyway and can be re-imported at any time.
+* **Elasticsearch deliberately runs without authentication**
+  (`xpack.security.enabled=false`) but is only reachable inside the internal
+  Docker network — port 9200 is not published. Don't change this without
+  enabling security.
 
-# Sonderfall: Forensic-Reports ohne ARF-Teil (dogado/secure-mailgate u.a.)
+# Special case: failure reports without an ARF part
 
-Manche Gateways schicken Forensic-Reports ohne den maschinenlesbaren
-`message/feedback-report`-Teil. parsedmarc parst sie zwar (Text-Fallback),
-aber der Elasticsearch-Export verwirft sie dann mit
-`Failure report missing required field: 'feedback_type'`.
+Some gateways (e.g. Exim/cPanel-based ones) send DMARC failure/forensic
+reports without the machine-readable `message/feedback-report` part.
+parsedmarc parses them via a plain-text fallback, but its Elasticsearch
+export then drops them with
+`Failure report missing required field: 'feedback_type'`
+([parsedmarc#332](https://github.com/domainaware/parsedmarc/issues/332)).
 
-Dieser Stack schaltet deshalb [parsedmarc/patch_feedback_type.py](parsedmarc/patch_feedback_type.py)
-als Entrypoint-Wrapper vor: Er ergänzt die fehlenden Felder
-(`feedback_type = auth-failure`, leere `authentication_results`), sodass
-diese Reports trotzdem im Dashboard landen. Bei standardkonformen Reports
-ändert der Patch nichts.
+This stack therefore prepends
+[parsedmarc/patch_feedback_type.py](parsedmarc/patch_feedback_type.py) as an
+entrypoint wrapper: it fills in the missing fields
+(`feedback_type = auth-failure`, empty `authentication_results`) so these
+reports still reach the dashboard. For standards-compliant reports the patch
+changes nothing. A proper fix has been submitted upstream
+([parsedmarc#831](https://github.com/domainaware/parsedmarc/pull/831)); once
+it is released, the wrapper can be removed.
 
-Bereits als „invalid" einsortierte oder nur archivierte, aber nicht
-gespeicherte Reports nachträglich importieren: die Mails im Mailclient aus
-`Archive/Failure` (bzw. `Archive/Invalid`) zurück in die INBOX verschieben —
-der Watch-Modus verarbeitet sie erneut, Duplikate erkennt parsedmarc selbst.
+To re-import reports that were previously archived but never indexed: move
+the mail from `Archive/Failure` (or `Archive/Invalid`) back into the inbox —
+watch mode processes it again, and parsedmarc detects duplicates itself.
 
 # Troubleshooting
 
-| Symptom | Ursache / Lösung |
+| Symptom | Cause / fix |
 |---|---|
-| Elasticsearch-Container stirbt sofort, Exit-Code 78, Log: `max virtual memory areas vm.max_map_count [65530] is too low` | Schritt 1 vergessen oder Aufgabe nach Neustart nicht gelaufen. `sudo sysctl -w vm.max_map_count=262144`, Boot-Aufgabe prüfen. |
-| Elasticsearch stirbt mit Exit-Code 1, Log: `seccomp unavailable: CONFIG_SECCOMP not compiled into kernel` | Elasticsearch ≥ 8.15 auf Synology — der DSM-Kernel (4.4) kann kein seccomp, ab 8.15 ist das fatal. Image auf 8.14.3 gepinnt lassen; kein DSM-seitiger Fix möglich. |
-| parsedmarc: `Permission denied: '/parsedmarc.ini'` | `chmod 644` auf die Datei (Container läuft als uid 1000). |
-| Elasticsearch: `AccessDeniedException` auf `/usr/share/elasticsearch/data` oder Grafana: `GF_PATHS_DATA='/var/lib/grafana' is not writable` | `chown` aus Schritt 2 vergessen: `data/elasticsearch` → uid 1000, `data/grafana` → uid 472. |
-| parsedmarc: `%`-Fehler beim Start (InterpolationSyntaxError) | `%` im IMAP-Passwort muss in der ini als `%%` geschrieben werden. |
-| Grafana-Panels zeigen „Datasource not found" | Datasource-UIDs (`dmarc_es_ag`/`dmarc_es_fo`) in `datasource.yml` wurden verändert — Original wiederherstellen. |
-| Dashboard leer, keine Fehler | Zeitbereich oben rechts vergrößern (Reports liegen in der Vergangenheit). Prüfen: `curl http://localhost:9200/_cat/indices` (per SSH, aus einem Container im dmarc-Netz) — existieren `dmarc_aggregate-YYYY-MM-DD`- bzw. `dmarc_failure-YYYY-MM-DD`-Indizes? |
-| NAS wird träge / OOM während des Imports | `ES_HEAP`/`ES_MEM_LIMIT` senken (bei 4 GB RAM: 1g/2g); `batch_size` senken; `strip_attachment_payloads = True`. |
-| Import bricht ab, Log: `this action would add [2] shards, but this cluster currently has [...] maximum normal shards open` | Shard-Limit erreicht — `cluster.max_shards_per_node` in der Compose-Datei erhöhen (Default hier bereits 4000). |
-| Portainer-Git-Stack: `bind source path does not exist` | `CONFIG_DIR` zeigt auf einen nicht existierenden Pfad, oder Schritt 2 fehlt. Relative Pfade funktionieren in Portainer CE nicht. |
+| Elasticsearch container dies immediately, exit code 78, log: `max virtual memory areas vm.max_map_count [65530] is too low` | Step 1 skipped or the boot task didn't run. `sudo sysctl -w vm.max_map_count=262144`, check the boot task. |
+| Elasticsearch dies with exit code 1, log: `seccomp unavailable: CONFIG_SECCOMP not compiled into kernel` | Elasticsearch ≥ 8.15 on Synology — the DSM kernel (4.4) has no seccomp; from 8.15 on this is fatal. Keep the image pinned to 8.14.3; no DSM-side fix exists. |
+| parsedmarc: `Permission denied: '/parsedmarc.ini'` | `chmod 644` the file (the container runs as uid 1000). |
+| Elasticsearch: `AccessDeniedException` on `/usr/share/elasticsearch/data`, or Grafana: `GF_PATHS_DATA='/var/lib/grafana' is not writable` | The `chown` from step 2 is missing: `data/elasticsearch` → uid 1000, `data/grafana` → uid 472. |
+| parsedmarc: `%` error on startup (InterpolationSyntaxError) | A `%` in the IMAP password must be written as `%%` in the ini file. |
+| Grafana panels show "Datasource not found" | The datasource UIDs (`dmarc_es_ag`/`dmarc_es_fo`) in `datasource.yml` were changed — restore the originals. |
+| Dashboard empty, no errors | Widen the time range in the top right (reports lie in the past). Check: `curl http://localhost:9200/_cat/indices` (via SSH, from a container in the dmarc network) — do `dmarc_aggregate-YYYY-MM-DD` / `dmarc_failure-YYYY-MM-DD` indices exist? |
+| NAS becomes sluggish / OOM during import | Lower `ES_HEAP`/`ES_MEM_LIMIT` (on 4 GB RAM: 1g/2g); lower `batch_size`; set `strip_attachment_payloads = True`. |
+| Import aborts, log: `this action would add [2] shards, but this cluster currently has [...] maximum normal shards open` | Shard limit reached — raise `cluster.max_shards_per_node` in the compose file (already 4000 here). |
+| Portainer Git stack: `bind source path does not exist` | `CONFIG_DIR` points to a non-existent path, or step 2 is missing. Relative paths do not work in Portainer CE. |
 
 # Credits
 
-* [domainaware/parsedmarc](https://github.com/domainaware/parsedmarc) — Parser & Docker-Image (Apache 2.0)
-* [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCallaghan/dmarc-visualizer) und
-  [debricked/dmarc-visualizer](https://github.com/debricked/dmarc-visualizer) — Grafana-Dashboard & ursprüngliche Stack-Idee (Apache 2.0)
+* [domainaware/parsedmarc](https://github.com/domainaware/parsedmarc) — parser & Docker image (Apache 2.0)
+* [LukeCallaghan/dmarc-visualizer](https://github.com/LukeCallaghan/dmarc-visualizer) and
+  [debricked/dmarc-visualizer](https://github.com/debricked/dmarc-visualizer) — Grafana dashboard & original stack idea (Apache 2.0)
